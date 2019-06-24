@@ -3,17 +3,19 @@
 #E. Pierson, C. Simoiu, J. Overgoor, S. Corbett-Davies, V. Ramachandran, C. Phillips, S. Goel. (2017) “A large-scale analysis of racial disparities in police stops across the United States”.
 #https://5harad.com/papers/traffic-stops.pdf
 
-set.seed(20)
 
 FL <- read.csv("FL.csv", stringsAsFactors = FALSE)
 FL <- FL[sample(nrow(FL)),]
 
+#splitting time variable into year, month, and hour
 library(lubridate)
 FL$stop_year <- year(ymd(FL$stop_date))
 FL$stop_month <- month(ymd(FL$stop_date))
 FL$stop_hour <- hour(hm(FL$stop_time))
 FL$stop_hour_fac <- as.factor(hour(hm(FL$stop_time)))
 
+#observations for the violation variable contains varied combinations of different violations
+#creating separate logical columns for each violation
 FL$truck_violation <- grepl('Truck', FL$violation)
 FL$speeding_violation <- grepl('Speeding', FL$violation)
 FL$seat_belt_violation <- grepl('Seat belt', FL$violation)
@@ -26,9 +28,11 @@ FL$license_violation <- grepl('License', FL$violation)
 FL$equipment_violation <- grepl('Equipment', FL$violation)
 FL$dui_violation <- grepl('DUI', FL$violation)
 
+#remove various variables that won't be used e.g., raw data, contraband (was not captured for FL data), etc.
 FL = FL[,-c(1,2,3,4,5,7,9,11,13,15,18,20,23,27,28)]
 FL = na.omit(FL)
 
+#clarify blank values
 library(stringr)
 FL$stop_outcome <- str_replace(FL$stop_outcome, "^$", "No Action")
 FL$search_type <- str_replace(FL$search_type, "^$", "No Search")
@@ -36,6 +40,8 @@ FL$search_type <- str_replace(FL$search_type, "^$", "No Search")
 library(dplyr)
 library(plyr)
 
+#coding arrests and searches as 0, 1
+#binning driver and officer ages
 FL <- FL %>%
   mutate(is_arrested_num = ifelse(is_arrested == "TRUE", 1, 0),
          is_searched_num = ifelse(search_conducted == "TRUE", 1, 0),
@@ -61,6 +67,8 @@ FL <- FL %>%
            officer_age %in% 80:89 ~ "80-89",
            officer_age %in% 90:99 ~ "90-99"
          )))
+
+#small tampa subset for testing plots/models
 tp <- FL[FL$fine_grained_location == "TAMPA",]
 
 #######
@@ -72,7 +80,9 @@ length(which(FL$is_searched_num == 1))/length(FL$is_searched_num)
 #######
 
 
-#######
+#########
+# PLOTS #
+#########
 library(dplyr)
 library(ggplot2)
 library(gridExtra)
@@ -237,6 +247,8 @@ g14
 ##########
 # MODELS #
 ##########
+set.seed(20)
+
 table(FL$is_arrested_num)
 table(FL$is_searched_num)
 
