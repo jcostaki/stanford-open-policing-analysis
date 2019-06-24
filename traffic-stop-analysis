@@ -1,0 +1,367 @@
+# https://www.kaggle.com/stanford-open-policing/stanford-open-policing-project-florida
+
+#E. Pierson, C. Simoiu, J. Overgoor, S. Corbett-Davies, V. Ramachandran, C. Phillips, S. Goel. (2017) “A large-scale analysis of racial disparities in police stops across the United States”.
+#https://5harad.com/papers/traffic-stops.pdf
+
+set.seed(20)
+
+FL <- read.csv("FL.csv", stringsAsFactors = FALSE)
+FL <- FL[sample(nrow(FL)),]
+
+library(lubridate)
+FL$stop_year <- year(ymd(FL$stop_date))
+FL$stop_month <- month(ymd(FL$stop_date))
+FL$stop_hour <- hour(hm(FL$stop_time))
+FL$stop_hour_fac <- as.factor(hour(hm(FL$stop_time)))
+
+FL$truck_violation <- grepl('Truck', FL$violation)
+FL$speeding_violation <- grepl('Speeding', FL$violation)
+FL$seat_belt_violation <- grepl('Seat belt', FL$violation)
+FL$safe_movement_violation <- grepl('Safe movement', FL$violation)
+FL$registration_plates_violation <- grepl('Registration/plates', FL$violation)
+FL$paperwork_violation <- grepl('Paperwork', FL$violation)
+FL$other_violation <- grepl('Other', FL$violation)
+FL$lights_violation <- grepl('Lights', FL$violation)
+FL$license_violation <- grepl('License', FL$violation)
+FL$equipment_violation <- grepl('Equipment', FL$violation)
+FL$dui_violation <- grepl('DUI', FL$violation)
+
+FL = FL[,-c(1,2,3,4,5,7,9,11,13,15,18,20,23,27,28)]
+FL = na.omit(FL)
+
+library(stringr)
+FL$stop_outcome <- str_replace(FL$stop_outcome, "^$", "No Action")
+FL$search_type <- str_replace(FL$search_type, "^$", "No Search")
+
+library(dplyr)
+library(plyr)
+
+FL <- FL %>%
+  mutate(is_arrested_num = ifelse(is_arrested == "TRUE", 1, 0),
+         is_searched_num = ifelse(search_conducted == "TRUE", 1, 0),
+         binned_driver_age = factor(case_when(
+           driver_age %in% 1:19 ~ "1-19",
+           driver_age %in% 20:29 ~ "20-29",
+           driver_age %in% 30:39 ~ "30-39",
+           driver_age %in% 40:49 ~ "40-49",
+           driver_age %in% 50:59 ~ "50-59",
+           driver_age %in% 60:69 ~ "60-69",
+           driver_age %in% 70:79 ~ "70-79",
+           driver_age %in% 80:89 ~ "80-89",
+           driver_age %in% 90:99 ~ "90-99"
+           )),
+         binned_officer_age = factor(case_when(
+           officer_age %in% 1:19 ~ "1-19",
+           officer_age %in% 20:29 ~ "20-29",
+           officer_age %in% 30:39 ~ "30-39",
+           officer_age %in% 40:49 ~ "40-49",
+           officer_age %in% 50:59 ~ "50-59",
+           officer_age %in% 60:69 ~ "60-69",
+           officer_age %in% 70:79 ~ "70-79",
+           officer_age %in% 80:89 ~ "80-89",
+           officer_age %in% 90:99 ~ "90-99"
+         )))
+tp <- FL[FL$fine_grained_location == "TAMPA",]
+
+#######
+# 3% of stops end in arrest
+length(which(FL$is_arrested_num == 1))/length(FL$is_arrested_num)
+
+# .6% of stops result in a search
+length(which(FL$is_searched_num == 1))/length(FL$is_searched_num)
+#######
+
+
+#######
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+
+#two plots of driver and officer gender breakdown by stop outcome
+#percentage of male driver/officer lines added as y-intercepts
+#men are more likely to be arrested, but also receive no action from the officer
+#women are also slightly more likely to only receive a warning
+#officer gender breakdown is pretty even, except for no action
+#there are a lot of missing data from officer gender for "no action", maybe because the officer does not fully record the stop...
+driver_m = length(which(FL$driver_gender == "M"))/
+  length(FL$driver_gender)
+officer_m = length(which(FL$officer_gender == "M"))/
+  length(FL$officer_gender)
+g1 <- FL %>%
+  ggplot(aes(stop_outcome)) + 
+  geom_bar(position = "fill",aes(fill = driver_gender)) +
+  geom_hline(yintercept = driver_m) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  ggtitle("Driver Gender Breakdown of Stop Outcome") + 
+  ylab("Gender Ratio") + 
+  xlab("Stop Outcome") + 
+  labs(fill = "Driver Gender")
+g2 <- FL %>%
+  ggplot(aes(stop_outcome)) + 
+  geom_bar(position = "fill",aes(fill = officer_gender)) +
+  geom_hline(yintercept = officer_m) +
+  theme(axis.text.x = element_text(angle = 90)) + 
+  ggtitle("Officer Gender Breakdown of Stop Outcome") + 
+  ylab("Gender Ratio") +
+  xlab("Stop Outcome") +
+  labs(fill = "Officer Gender")
+grid.arrange(g1, g2, ncol=2)
+
+#women are much less likely to be searched
+table(FL$search_type, FL$is_arrested)
+g3 <- FL %>%
+  filter(search_type != "Warrant"&
+         search_type != "Probable Cause,Protective Frisk"&
+         search_type != "Inventory,Protective Frisk"&
+         search_type != "Inventory"&
+         search_type != "Incident to Arrest,Probable Cause"&
+         search_type != "Incident to Arrest,Inventory"&
+         search_type != "Consent,Probable Cause") %>%
+  ggplot(aes(search_type)) + 
+  geom_bar(position = "fill",aes(fill = driver_gender)) +
+  geom_hline(yintercept = driver_m) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  ggtitle("Gender Breakdown of Search Type") + 
+  ylab("Gender Ratio") +
+  xlab("Search Type") +
+  labs(fill = "Driver Gender")
+g3
+
+g4 <- FL %>%
+  filter(driver_race == "White" |
+           driver_race == "Black" |
+           driver_race == "Hispanic") %>%
+  ggplot(aes(driver_race, fill = search_conducted)) +
+  geom_bar() +
+  ggtitle("Total Stops by Race (with search breakdown)") + 
+  ylab("Count") +
+  xlab("Driver Race") +
+  labs(fill = "Search Conducted?")
+g5 <- FL %>%
+  filter(driver_race == "White" |
+        driver_race == "Black" |
+        driver_race == "Hispanic") %>%
+  filter(search_type != "No Search" & 
+        search_type != "Warrant"&
+        search_type != "Probable Cause,Protective Frisk"&
+        search_type != "Inventory,Protective Frisk"&
+        search_type != "Inventory"&
+        search_type != "Incident to Arrest,Probable Cause"&
+        search_type != "Incident to Arrest,Inventory"&
+        search_type != "Consent,Probable Cause") %>%
+  ggplot(aes(is_arrested, fill = search_type)) +
+  geom_bar() + 
+  facet_grid(cols = vars(driver_race)) +
+  ggtitle("Race Breakdown of Searches and Arrests") + 
+  ylab("Count") +
+  xlab("Arrested?") +
+  labs(fill = "Search Type")
+grid.arrange(g4, g5, ncol=2)
+
+#percentage of white drivers added as y-intercept line
+#trends between white/black officers do not change much
+#protective frisk for black officer/black drivers is only 1 result  
+#officer more likely to search black drivers for probable cause and protective frisk
+#white drivers more likely to consent to searches
+mean_white <- FL %>% filter(search_conducted=="TRUE")
+mean_white = length(which(FL$driver_race=="White"))/length(FL$driver_race)
+labels <- c("Black Officer", "White Officer")
+names(labels) <- c("Black", "White")
+g6 <- FL %>%
+  filter(driver_race == "White" |
+           driver_race == "Black") %>%
+  filter(officer_race == "White" |
+           officer_race== "Black") %>%
+  filter(search_type != "No Search" & 
+           search_type != "Warrant"&
+           search_type != "Probable Cause,Protective Frisk"&
+           search_type != "Inventory,Protective Frisk"&
+           search_type != "Inventory"&
+           search_type != "Incident to Arrest,Probable Cause"&
+           search_type != "Incident to Arrest,Inventory"&
+           search_type != "Consent,Probable Cause") %>%
+  ggplot(aes(search_type, fill = driver_race)) + 
+  geom_bar(position = "fill") + 
+  geom_hline(yintercept = mean_white) +
+  facet_grid(col = vars(officer_race), 
+             labeller = labeller(officer_race = labels)) +
+  ggtitle("Officer/Driver Breakdown by Search Type") + 
+  ylab("Ratio") +
+  xlab("Search Type") +
+  labs(fill = "Driver Race")
+g6
+prot_frisk <- FL %>% filter(search_type == "Protective Frisk")
+table(prot_frisk$driver_race, prot_frisk$officer_race)
+
+#probable cause searches are followed by arrest almost 50% of the time
+#probable cause searches number about the same for black and white drivers
+g7 <- FL %>%
+  filter(search_type == "Probable Cause")
+g7 <- g7 %>%
+  ggplot(aes(driver_race)) + 
+  geom_bar() +
+  facet_grid(col = vars(is_arrested))
+g7
+
+#traffic stops spike at rush hour
+#arrests are slightly up during the day
+g8 <- ggplot(FL, aes(stop_hour, fill = is_arrested))
+g8 + geom_bar()
+
+#traffic stops spike around drivers aged 24 and gradually declines
+#data starts at 15 years old drivers
+summary(FL$driver_age)
+g9 <- ggplot(FL, aes(driver_age))
+g9 + geom_area(stat = "bin")
+
+g10 <- ggplot(data=tp, aes(x=driver_age, y=is_arrested)) + 
+  geom_jitter(width=.15, height=0.15, alpha=.03)
+g10
+
+g11 <- ggplot(FL, aes(stop_hour, fill = is_arrested)) + geom_bar()
+g11 + facet_grid(cols = vars(stop_year))
+
+#last half of 2015 with the new na.omit on line 32
+g12 <- ggplot(FL, aes(stop_month, fill = is_arrested)) + geom_bar()
+g12 + facet_grid(cols = vars(stop_year))
+
+#officer age spikes at late 20s
+#non-arresting officers age spikes again around 45
+g13 <- ggplot(FL, aes(officer_age)) + geom_density(kernel = "gaussian")
+g13 + facet_grid(cols = vars(is_arrested))
+
+g14 <- ggplot(data=tp, aes(x=officer_age, y=is_arrested)) +
+  geom_jitter(width=.15, height=.15, alpha=.02)
+g14
+
+##########
+# MODELS #
+##########
+table(FL$is_arrested_num)
+table(FL$is_searched_num)
+
+#subset
+sub <- round(.75 * dim(FL)[1])
+train <- FL[1:sub,]
+test <- FL[-(1:sub),]
+
+#arrests predicted only by search conducted (true/false)
+#logit model
+g15 <- ggplot(data=train, aes(x=is_searched_num, y=is_arrested_num)) +
+  geom_jitter(width=.15, height=.15, alpha=.02) + 
+  geom_smooth(method = 'glm',
+              method.args = list(family = "binomial"))
+g15
+
+glm1 <- glm(is_arrested_num ~
+              is_searched_num, data = train,
+            family=binomial(link="logit"),
+            na.action=na.omit)
+
+newdf <- data.frame(is_searched_num = seq(0, 1, length.out = 100))
+newdf$pout_logit <- predict (glm1, newdf, se.fit = TRUE, type = "response")$fit
+newdf$pse_logit <- predict(glm1, newdf, se.fit = TRUE, type = "response")$se.fit
+newdf$pupper_logit <- newdf$pout_logit + (1.96 * newdf$pse_logit)
+newdf$plower_logit <- newdf$pout_logit - (1.96 * newdf$pse_logit)
+#plot
+with(newdf, plot(pout_logit ~ is_searched_num, type = "l", lwd = 2))
+with(newdf, lines(pupper_logit ~ is_searched_num, type = "l", lty = 2))
+with(newdf, lines(plower_logit ~ is_searched_num, type = "l", lty = 2))
+
+#logodds and odds ratio plot - if searched, odds are 1.4x higher driver is arrested
+logodds <- predict(glm1, newdf, se.fit = TRUE)$fit
+logodds_se <- predict(glm1, newdf, se.fit = TRUE)$se.fit
+logodds_upper <- logodds + (1.96 * logodds_se)
+logodds_lower <- logodds - (1.96 * logodds_se)
+plot(logodds ~ newdf$is_searched_num, type = "l", lwd = 2)
+lines(logodds_upper ~ newdf$is_searched_num, type = "l", lty = 2)
+lines(logodds_lower ~ newdf$is_searched_num, type = "l", lty = 2)
+plot(exp(logodds) ~ newdf$is_searched_num, type = "l", lwd = 2)
+lines(exp(logodds_upper) ~ newdf$is_searched_num, type = "l", lty = 2)
+lines(exp(logodds_lower) ~ newdf$is_searched_num, type = "l", lty = 2)
+
+glm2 <- glm(is_arrested_num ~
+              is_searched_num + 
+              driver_age + 
+              driver_race + 
+              driver_gender +
+              stop_hour
+            , data = train,
+            family=binomial(link="logit"),
+            na.action=na.omit)
+summary(glm2)
+
+
+###
+library(ROCR)
+pred = predict(glm2, type = "response")
+predObj = prediction (pred, train$is_arrested)
+rocObj = performance(predObj, measure="tpr", x.measure="fpr")
+aucObj = performance(predObj, measure = "auc")
+plot(rocObj, main = paste("Area under the curve:",
+                          round(aucObj@y.values[[1]], 4)))
+
+alpha <- round(as.numeric(unlist(rocObj@alpha.values)), 4)
+fpr <- round(as.numeric(unlist(rocObj@x.values)), 4)
+tpr <- round(as.numeric(unlist(rocObj@y.values)), 4)
+
+par(mar = c(5,5,2,5))
+plot(alpha, tpr, xlab="Threshold", xlim=c(0,1),
+                 ylab="True Positive Rate", type = "l")
+par(new="True")
+plot(alpha, fpr, xlab="", ylab="", axes=F, xlim=c(0,1), type = "l")
+axis(side=4)
+mtext(side=4, line=3, "False Positive Rate")
+text(0.18, 0.18, "FPR")
+text(0.58, 0.58, "TPR")
+
+i <- which(round(alpha, 2) == 0.1)
+paste("Threshold=", (alpha[i]), " TPR=", tpr[i], " FPR=", fpr[i])
+
+library(regclass)
+#arrest predicted by search, driver (race,gender,age), and stop hour
+conf.m <- confusion_matrix(glm2, test)
+(conf.m[1,2]+conf.m[2,1])/conf.m[3,3] # .03 error rate
+(conf.m[1,1]+conf.m[2,2])/conf.m[3,3] # .97 accuracy
+
+##############
+# CART MODEL #
+##############
+FL2 = FL[,-c(1,2,6,8,9,10,14,15,17,31,32)]
+sub2 <- round(.75 * dim(FL2)[1])
+train2 <- FL2[1:sub2,]
+test2 <- FL2[-(1:sub2),]
+
+
+library(rpart)
+library(rpart.plot)
+
+#tree 1
+dt1 <- rpart(is_arrested_num~.,
+             data = train2, method = "class", 
+             control = rpart.control("minsplit"=1, 
+                                     "minbucket" = 1,
+                                     "maxdepth" = 4,
+                                     cp = -1))
+rpart.plot(dt1, tweak = 1.5)
+
+#confusion matrix
+dt1.pred <- predict(dt1, newdata = test2, type = "class")
+dt1.cm <- table(dt1.pred, test2$is_arrested_num)
+dt1.cm
+(dt1.cm[1,2]+dt1.cm[2,1])/sum(dt1.cm[1:2,1:2]) # .03 error rate
+(dt1.cm[1,1]+dt1.cm[2,2])/sum(dt1.cm[1:2,1:2]) # .97 accuracy
+
+
+
+#tree 2
+dt2 <- rpart(is_arrested_num~.,
+             data = train2, method = "class", cp =.02)
+rpart.plot(dt2, tweak = 1.5)
+
+#confusion matrix
+dt2.pred <- predict(dt2, newdata = test2, type = "class")
+dt2.cm <- table(dt2.pred, test2$is_arrested_num)
+dt2.cm
+(dt2.cm[1,2]+dt2.cm[2,1])/sum(dt2.cm[1:2,1:2]) # .03 error rate
+(dt2.cm[1,1]+dt2.cm[2,2])/sum(dt2.cm[1:2,1:2]) # .97 accuracy
